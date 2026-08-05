@@ -1,0 +1,4 @@
+/* Global baseline — App.css handles all component styles */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 16px; }
+body { margin: 0; }

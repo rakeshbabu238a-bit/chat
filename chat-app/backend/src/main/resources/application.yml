@@ -1,0 +1,19 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: llm-chat-app
+
+groq:
+  api:
+    key: ${GROQ_API_KEY:}
+  model: llama-3.3-70b-versatile
+
+cors:
+  allowed-origins: http://localhost:5173,http://localhost:3000
+
+logging:
+  level:
+    root: INFO
+    com.example.chat: DEBUG

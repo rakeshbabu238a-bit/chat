@@ -1,0 +1,15 @@
+target/
+
+.idea/
+
+*.iml
+
+*.class
+
+*.log
+
+.env
+
+.vscode/
+
+.DS_Store
