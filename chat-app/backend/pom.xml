@@ -84,6 +84,7 @@
                         <goals><goal>install-node-and-npm</goal></goals>
                         <configuration>
                             <nodeVersion>v22.14.0</nodeVersion>
+                            <skip>${skipFrontend}</skip>
                         </configuration>
                     </execution>
                     <!-- npm install -->
@@ -92,6 +93,7 @@
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>install</arguments>
+                            <skip>${skipFrontend}</skip>
                         </configuration>
                     </execution>
                     <!-- npm run build -->
@@ -100,6 +102,7 @@
                         <goals><goal>npm</goal></goals>
                         <configuration>
                             <arguments>run build</arguments>
+                            <skip>${skipFrontend}</skip>
                         </configuration>
                     </execution>
                 </executions>
@@ -133,5 +136,49 @@
 
         </plugins>
     </build>
+
+    <!--
+        Profile used when building backend only (e.g. Railway deployment).
+        Activate with: mvn package -P backend-only -DskipTests
+        This skips the frontend-maven-plugin and the copy-resources step.
+    -->
+    <profiles>
+        <profile>
+            <id>backend-only</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>1.15.1</version>
+                        <executions>
+                            <execution>
+                                <id>install-node-and-npm</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>npm-install</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>npm-build</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-frontend</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
