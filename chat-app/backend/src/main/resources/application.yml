@@ -26,19 +26,6 @@ spring:
       enabled: ${H2_CONSOLE_ENABLED:true}
       path: /h2-console
 
-  # Email (Gmail SMTP)
-  mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:rakeshbabu238.a@gmail.com}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enabled: true
-
 groq:
   api:
     key: ${GROQ_API_KEY:}
@@ -49,7 +36,6 @@ app:
   admin-email: ${ADMIN_EMAIL:rakeshbabu238.a@gmail.com}
   admin-username: ${ADMIN_USERNAME:admin}
   admin-password: ${ADMIN_PASSWORD:admin123}
-  base-url: ${APP_BASE_URL:http://localhost:8082}
   jwt:
     secret: ${JWT_SECRET:myDefaultSuperSecretKeyForJWTTokenGenerationThatIsLongEnough2024}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
