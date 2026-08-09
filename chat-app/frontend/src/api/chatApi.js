@@ -5,12 +5,18 @@ const BASE_URL = import.meta.env.VITE_API_URL || '';
 /**
  * Send a conversation history to the backend and return the assistant's reply.
  * @param {Array<{role: string, content: string}>} messages
+ * @param {string|null} token - JWT auth token
  * @returns {Promise<{reply: string, model: string, totalTokens: number}>}
  */
-export async function sendMessage(messages) {
+export async function sendMessage(messages, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${BASE_URL}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ messages }),
   });
 
