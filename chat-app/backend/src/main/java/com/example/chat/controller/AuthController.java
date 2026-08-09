@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -29,21 +30,6 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
     /**
-     * POST /api/auth/register
-     * Register a new user. Account will be in PENDING status until admin approves.
-     */
-    @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        log.info("POST /api/auth/register - username: {}", request.getUsername());
-        User user = userService.register(request);
-        return ResponseEntity.ok(new AuthResponse(
-                "Registration successful. Please wait for admin approval before logging in.",
-                null,
-                user.getUsername()
-        ));
-    }
-
-    /**
      * POST /api/auth/login
      * Authenticate user. Only approved users can login.
      */
@@ -51,12 +37,12 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         log.info("POST /api/auth/login - username: {}", request.getUsername());
 
-        // Check if user is approved before authenticating
         if (!userService.isApproved(request.getUsername())) {
             return ResponseEntity.status(403).body(new AuthResponse(
-                    "Your account is pending admin approval. Please wait for approval.",
+                    "Your account is not active. Contact the administrator.",
                     null,
-                    request.getUsername()
+                    request.getUsername(),
+                    null
             ));
         }
 
@@ -66,15 +52,19 @@ public class AuthController {
             );
 
             String token = jwtUtil.generateToken(authentication.getName());
+            User user = userService.findByUsername(authentication.getName());
+
             return ResponseEntity.ok(new AuthResponse(
                     "Login successful",
                     token,
-                    authentication.getName()
+                    authentication.getName(),
+                    user.getRole().name()
             ));
         } catch (AuthenticationException e) {
             log.warn("Login failed for user: {}", request.getUsername());
             return ResponseEntity.status(401).body(new AuthResponse(
                     "Invalid username or password",
+                    null,
                     null,
                     null
             ));
@@ -82,70 +72,84 @@ public class AuthController {
     }
 
     /**
-     * GET /api/auth/approve?token=...
-     * Admin clicks this link from the email to approve a user.
+     * POST /api/auth/admin/create-user
+     * Admin-only: create a new user (auto-approved).
      */
-    @GetMapping("/approve")
-    public ResponseEntity<String> approveUser(@RequestParam String token) {
-        log.info("GET /api/auth/approve - token: {}", token);
+    @PostMapping("/admin/create-user")
+    public ResponseEntity<Map<String, String>> createUser(
+            @RequestHeader("Authorization") String authHeader,
+            @Valid @RequestBody RegisterRequest request) {
+
+        // Verify caller is admin
+        String callerUsername = extractAndValidateAdmin(authHeader);
+        if (callerUsername == null) {
+            return ResponseEntity.status(403).body(Map.of("error", "Admin access required"));
+        }
+
+        log.info("POST /api/auth/admin/create-user - admin: {}, new user: {}", callerUsername, request.getUsername());
+
         try {
-            User user = userService.approveUser(token);
-            String html = """
-                    <html>
-                    <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-                        <h2 style="color: #4CAF50;">✅ User Approved</h2>
-                        <p>User <strong>%s</strong> (%s) has been approved and can now log in.</p>
-                    </body>
-                    </html>
-                    """.formatted(user.getUsername(), user.getEmail());
-            return ResponseEntity.ok().header("Content-Type", "text/html").body(html);
+            User user = userService.createUser(request);
+            return ResponseEntity.ok(Map.of(
+                    "message", "User created successfully",
+                    "username", user.getUsername(),
+                    "email", user.getEmail()
+            ));
         } catch (RuntimeException e) {
-            String html = """
-                    <html>
-                    <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-                        <h2 style="color: #f44336;">❌ Error</h2>
-                        <p>%s</p>
-                    </body>
-                    </html>
-                    """.formatted(e.getMessage());
-            return ResponseEntity.badRequest().header("Content-Type", "text/html").body(html);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     /**
-     * GET /api/auth/reject?token=...
-     * Admin clicks this link from the email to reject a user.
+     * GET /api/auth/admin/users
+     * Admin-only: list all users.
      */
-    @GetMapping("/reject")
-    public ResponseEntity<String> rejectUser(@RequestParam String token) {
-        log.info("GET /api/auth/reject - token: {}", token);
+    @GetMapping("/admin/users")
+    public ResponseEntity<?> listUsers(@RequestHeader("Authorization") String authHeader) {
+        String callerUsername = extractAndValidateAdmin(authHeader);
+        if (callerUsername == null) {
+            return ResponseEntity.status(403).body(Map.of("error", "Admin access required"));
+        }
+
+        List<Map<String, Object>> users = userService.getAllUsers().stream()
+                .map(u -> Map.<String, Object>of(
+                        "id", u.getId(),
+                        "username", u.getUsername(),
+                        "email", u.getEmail(),
+                        "role", u.getRole().name(),
+                        "status", u.getApprovalStatus().name(),
+                        "createdAt", u.getCreatedAt().toString()
+                ))
+                .toList();
+
+        return ResponseEntity.ok(users);
+    }
+
+    /**
+     * DELETE /api/auth/admin/users/{id}
+     * Admin-only: delete a user.
+     */
+    @DeleteMapping("/admin/users/{id}")
+    public ResponseEntity<Map<String, String>> deleteUser(
+            @RequestHeader("Authorization") String authHeader,
+            @PathVariable Long id) {
+
+        String callerUsername = extractAndValidateAdmin(authHeader);
+        if (callerUsername == null) {
+            return ResponseEntity.status(403).body(Map.of("error", "Admin access required"));
+        }
+
         try {
-            User user = userService.rejectUser(token);
-            String html = """
-                    <html>
-                    <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-                        <h2 style="color: #FF9800;">🚫 User Rejected</h2>
-                        <p>User <strong>%s</strong> (%s) has been rejected.</p>
-                    </body>
-                    </html>
-                    """.formatted(user.getUsername(), user.getEmail());
-            return ResponseEntity.ok().header("Content-Type", "text/html").body(html);
+            userService.deleteUser(id);
+            return ResponseEntity.ok(Map.of("message", "User deleted"));
         } catch (RuntimeException e) {
-            String html = """
-                    <html>
-                    <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-                        <h2 style="color: #f44336;">❌ Error</h2>
-                        <p>%s</p>
-                    </body>
-                    </html>
-                    """.formatted(e.getMessage());
-            return ResponseEntity.badRequest().header("Content-Type", "text/html").body(html);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     /**
      * GET /api/auth/status
-     * Check if the current JWT token is valid (used by frontend to verify auth state).
+     * Check if the current JWT token is valid.
      */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status(@RequestHeader("Authorization") String authHeader) {
@@ -153,11 +157,36 @@ public class AuthController {
             String token = authHeader.replace("Bearer ", "");
             String username = jwtUtil.extractUsername(token);
             if (jwtUtil.isTokenValid(token, username)) {
-                return ResponseEntity.ok(Map.of("authenticated", true, "username", username));
+                User user = userService.findByUsername(username);
+                return ResponseEntity.ok(Map.of(
+                        "authenticated", true,
+                        "username", username,
+                        "role", user.getRole().name()
+                ));
             }
         } catch (Exception e) {
             // Token invalid
         }
         return ResponseEntity.status(401).body(Map.of("authenticated", false));
+    }
+
+    /**
+     * Extract username from token and verify the user has ADMIN role.
+     * Returns username if admin, null otherwise.
+     */
+    private String extractAndValidateAdmin(String authHeader) {
+        try {
+            String token = authHeader.replace("Bearer ", "");
+            String username = jwtUtil.extractUsername(token);
+            if (jwtUtil.isTokenValid(token, username)) {
+                User user = userService.findByUsername(username);
+                if (user.getRole() == User.Role.ADMIN) {
+                    return username;
+                }
+            }
+        } catch (Exception e) {
+            // Invalid token
+        }
+        return null;
     }
 }

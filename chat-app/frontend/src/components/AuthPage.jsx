@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { login, register } from '../api/authApi';
+import { login } from '../api/authApi';
 
 export default function AuthPage({ onLogin }) {
-  const [isRegister, setIsRegister] = useState(false);
-  const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+  const [formData, setFormData] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null); // { type: 'success' | 'error', text: string }
+  const [message, setMessage] = useState(null);
 
   function handleChange(e) {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -17,29 +16,16 @@ export default function AuthPage({ onLogin }) {
     setMessage(null);
 
     try {
-      if (isRegister) {
-        const result = await register(formData);
-        setMessage({ type: 'success', text: result.message });
-        // Reset form after successful registration
-        setFormData({ username: '', email: '', password: '' });
-      } else {
-        const result = await login({ username: formData.username, password: formData.password });
-        // Store token and notify parent
-        localStorage.setItem('token', result.token);
-        localStorage.setItem('username', result.username);
-        onLogin(result.token, result.username);
-      }
+      const result = await login({ username: formData.username, password: formData.password });
+      localStorage.setItem('token', result.token);
+      localStorage.setItem('username', result.username);
+      localStorage.setItem('role', result.role || '');
+      onLogin(result.token, result.username, result.role);
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
     } finally {
       setLoading(false);
     }
-  }
-
-  function toggleMode() {
-    setIsRegister(!isRegister);
-    setMessage(null);
-    setFormData({ username: '', email: '', password: '' });
   }
 
   return (
@@ -48,7 +34,7 @@ export default function AuthPage({ onLogin }) {
         <div className="auth-header">
           <div className="auth-icon" aria-hidden="true">🤖</div>
           <h1>AI Chat</h1>
-          <p className="auth-subtitle">{isRegister ? 'Create your account' : 'Sign in to continue'}</p>
+          <p className="auth-subtitle">Sign in to continue</p>
         </div>
 
         {message && (
@@ -73,22 +59,6 @@ export default function AuthPage({ onLogin }) {
             />
           </div>
 
-          {isRegister && (
-            <div className="auth-field">
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                disabled={loading}
-                autoComplete="email"
-              />
-            </div>
-          )}
-
           <div className="auth-field">
             <label htmlFor="password">Password</label>
             <input
@@ -100,27 +70,18 @@ export default function AuthPage({ onLogin }) {
               required
               minLength={6}
               disabled={loading}
-              autoComplete={isRegister ? 'new-password' : 'current-password'}
+              autoComplete="current-password"
             />
           </div>
 
           <button type="submit" className="btn btn--primary auth-submit" disabled={loading}>
-            {loading ? 'Please wait...' : isRegister ? 'Register' : 'Login'}
+            {loading ? 'Please wait...' : 'Login'}
           </button>
         </form>
 
-        <p className="auth-toggle">
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button type="button" className="auth-toggle-btn" onClick={toggleMode} disabled={loading}>
-            {isRegister ? 'Login' : 'Register'}
-          </button>
+        <p className="auth-note">
+          Contact your administrator if you need an account.
         </p>
-
-        {isRegister && (
-          <p className="auth-note">
-            After registration, your account needs admin approval before you can log in.
-          </p>
-        )}
       </div>
     </div>
   );

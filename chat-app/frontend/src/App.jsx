@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Message from './components/Message';
 import TypingIndicator from './components/TypingIndicator';
 import AuthPage from './components/AuthPage';
+import AdminPanel from './components/AdminPanel';
 import { sendMessage } from './api/chatApi';
 import { verifyToken } from './api/authApi';
 import './App.css';
@@ -9,7 +10,9 @@ import './App.css';
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [username, setUsername] = useState(localStorage.getItem('username'));
+  const [role, setRole] = useState(localStorage.getItem('role'));
   const [authChecked, setAuthChecked] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([
@@ -25,13 +28,16 @@ export default function App() {
     async function checkAuth() {
       if (token) {
         try {
-          await verifyToken(token);
+          const data = await verifyToken(token);
+          setRole(data.role);
+          localStorage.setItem('role', data.role);
         } catch {
-          // Token invalid — clear auth state
           localStorage.removeItem('token');
           localStorage.removeItem('username');
+          localStorage.removeItem('role');
           setToken(null);
           setUsername(null);
+          setRole(null);
         }
       }
       setAuthChecked(true);
@@ -44,16 +50,21 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  function handleLogin(newToken, newUsername) {
+  function handleLogin(newToken, newUsername, newRole) {
     setToken(newToken);
     setUsername(newUsername);
+    setRole(newRole);
+    localStorage.setItem('role', newRole || '');
   }
 
   function handleLogout() {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    localStorage.removeItem('role');
     setToken(null);
     setUsername(null);
+    setRole(null);
+    setShowAdmin(false);
     setMessages([{ role: 'assistant', content: 'Hi! I\'m your AI assistant. How can I help you today?' }]);
   }
 
@@ -69,7 +80,6 @@ export default function App() {
     setLoading(true);
 
     try {
-      // Only send user/assistant messages to the API (exclude error bubbles)
       const apiHistory = nextMessages
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ role: m.role, content: m.content }));
@@ -99,20 +109,26 @@ export default function App() {
     setMessages([{ role: 'assistant', content: 'Chat cleared. How can I help you?' }]);
   }
 
-  // Show nothing until auth check completes (avoids flicker)
   if (!authChecked) {
     return null;
   }
 
-  // Not authenticated — show login/register page
   if (!token) {
     return <AuthPage onLogin={handleLogin} />;
   }
 
-  // Authenticated — show chat
+  // Show admin panel
+  if (showAdmin && role === 'ADMIN') {
+    return (
+      <div className="chat-app">
+        <AdminPanel token={token} onBack={() => setShowAdmin(false)} />
+      </div>
+    );
+  }
+
+  // Chat view
   return (
     <div className="chat-app">
-      {/* Header */}
       <header className="chat-header">
         <div className="chat-header__title">
           <div className="chat-header__icon" aria-hidden="true">🤖</div>
@@ -123,6 +139,15 @@ export default function App() {
         </div>
         <div className="chat-header__actions">
           <span className="chat-header__user">Hi, {username}</span>
+          {role === 'ADMIN' && (
+            <button
+              className="btn btn--ghost btn--admin"
+              onClick={() => setShowAdmin(true)}
+              aria-label="Admin panel"
+            >
+              Admin
+            </button>
+          )}
           <button
             className="btn btn--ghost"
             onClick={clearChat}
@@ -141,7 +166,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Message list */}
       <main className="chat-messages" role="list" aria-label="Chat messages">
         {messages.map((msg, i) => (
           <Message key={i} role={msg.role} content={msg.content} />
@@ -150,7 +174,6 @@ export default function App() {
         <div ref={bottomRef} aria-hidden="true" />
       </main>
 
-      {/* Input area */}
       <footer className="chat-input-area">
         <form className="chat-form" onSubmit={handleSubmit}>
           <textarea

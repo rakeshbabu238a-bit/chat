@@ -31,6 +31,11 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
+    private Role role = Role.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
     private ApprovalStatus approvalStatus = ApprovalStatus.PENDING;
 
     @Column(nullable = false, unique = true)
@@ -47,5 +52,10 @@ public class User {
         PENDING,
         APPROVED,
         REJECTED
+    }
+
+    public enum Role {
+        USER,
+        ADMIN
     }
 }

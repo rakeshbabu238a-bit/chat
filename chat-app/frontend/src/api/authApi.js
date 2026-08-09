@@ -1,30 +1,7 @@
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 /**
- * Register a new user account.
- * @param {{ username: string, email: string, password: string }} data
- * @returns {Promise<{ message: string, token: string|null, username: string }>}
- */
-export async function register(data) {
-  const response = await fetch(`${BASE_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(result.error || result.message || `Registration failed (${response.status})`);
-  }
-
-  return result;
-}
-
-/**
  * Login with username and password.
- * @param {{ username: string, password: string }} data
- * @returns {Promise<{ message: string, token: string|null, username: string }>}
  */
 export async function login(data) {
   const response = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -48,8 +25,6 @@ export async function login(data) {
 
 /**
  * Verify if the stored token is still valid.
- * @param {string} token
- * @returns {Promise<{ authenticated: boolean, username: string }>}
  */
 export async function verifyToken(token) {
   const response = await fetch(`${BASE_URL}/api/auth/status`, {
@@ -61,4 +36,59 @@ export async function verifyToken(token) {
   }
 
   return response.json();
+}
+
+/**
+ * Admin: Create a new user.
+ */
+export async function createUser(token, data) {
+  const response = await fetch(`${BASE_URL}/api/auth/admin/create-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error || `Failed to create user (${response.status})`);
+  }
+
+  return result;
+}
+
+/**
+ * Admin: List all users.
+ */
+export async function listUsers(token) {
+  const response = await fetch(`${BASE_URL}/api/auth/admin/users`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to load users');
+  }
+
+  return response.json();
+}
+
+/**
+ * Admin: Delete a user.
+ */
+export async function deleteUser(token, userId) {
+  const response = await fetch(`${BASE_URL}/api/auth/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.error || `Failed to delete user (${response.status})`);
+  }
+
+  return result;
 }

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -18,14 +19,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final EmailService emailService;
 
     /**
-     * Register a new user. The account starts in PENDING status.
-     * An approval email is sent to the admin.
+     * Admin creates a new user. The account is auto-approved and ready to login.
      */
     @Transactional
-    public User register(RegisterRequest request) {
+    public User createUser(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new RuntimeException("Username already exists");
         }
@@ -37,62 +36,36 @@ public class UserService {
                 .username(request.getUsername())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
+                .approvalStatus(User.ApprovalStatus.APPROVED)
+                .approvedAt(LocalDateTime.now())
+                .role(User.Role.USER)
                 .build();
 
         User savedUser = userRepository.save(user);
-        log.info("New user registered: {} (pending approval)", savedUser.getUsername());
-
-        // Send approval request email to admin
-        emailService.sendApprovalRequestEmail(savedUser);
+        log.info("Admin created user: {} (auto-approved)", savedUser.getUsername());
 
         return savedUser;
     }
 
     /**
-     * Approve a user by their approval token.
+     * Get all users (for admin panel).
      */
-    @Transactional
-    public User approveUser(String token) {
-        User user = userRepository.findByApprovalToken(token)
-                .orElseThrow(() -> new RuntimeException("Invalid approval token"));
-
-        if (user.getApprovalStatus() == User.ApprovalStatus.APPROVED) {
-            throw new RuntimeException("User is already approved");
-        }
-
-        user.setApprovalStatus(User.ApprovalStatus.APPROVED);
-        user.setApprovedAt(LocalDateTime.now());
-        User approvedUser = userRepository.save(user);
-
-        log.info("User approved: {}", approvedUser.getUsername());
-
-        // Notify the user that their account is now active
-        emailService.sendAccountApprovedEmail(approvedUser);
-
-        return approvedUser;
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
     }
 
     /**
-     * Reject a user by their approval token.
+     * Delete a user by ID (admin only).
      */
     @Transactional
-    public User rejectUser(String token) {
-        User user = userRepository.findByApprovalToken(token)
-                .orElseThrow(() -> new RuntimeException("Invalid approval token"));
-
-        if (user.getApprovalStatus() == User.ApprovalStatus.REJECTED) {
-            throw new RuntimeException("User is already rejected");
+    public void deleteUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (user.getRole() == User.Role.ADMIN) {
+            throw new RuntimeException("Cannot delete admin user");
         }
-
-        user.setApprovalStatus(User.ApprovalStatus.REJECTED);
-        User rejectedUser = userRepository.save(user);
-
-        log.info("User rejected: {}", rejectedUser.getUsername());
-
-        // Notify the user about the rejection
-        emailService.sendAccountRejectedEmail(rejectedUser);
-
-        return rejectedUser;
+        userRepository.delete(user);
+        log.info("Admin deleted user: {}", user.getUsername());
     }
 
     /**
