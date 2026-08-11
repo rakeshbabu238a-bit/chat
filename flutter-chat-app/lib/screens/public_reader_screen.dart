@@ -144,6 +144,19 @@ class _PublicReaderScreenState extends State<PublicReaderScreen> {
           ),
         ],
       ),
+      actions: [
+        TextButton.icon(
+          onPressed: () {
+            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+          },
+          icon: const Icon(Icons.login, size: 18, color: Color(0xFF818CF8)),
+          label: const Text(
+            'Login',
+            style: TextStyle(color: Color(0xFF818CF8), fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
     );
   }
 
