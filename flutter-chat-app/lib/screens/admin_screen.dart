@@ -229,7 +229,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   String _getLinkUrl(String token) {
-    return 'https://pinnacle-tech.in/#/link/$token';
+    return 'https://buddy-ec712.web.app/#/link/$token';
   }
 
   @override
