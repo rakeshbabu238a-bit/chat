@@ -23,7 +23,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _loadBroadcast();
+    _resetBroadcast();
     // Save to Firestore on every change (live typing)
     _broadcastController.addListener(_onBroadcastChanged);
   }
@@ -45,6 +45,15 @@ class _ChatScreenState extends State<ChatScreen> {
       final data = doc.data() as Map<String, dynamic>;
       _broadcastController.text = data['content'] as String? ?? '';
     }
+  }
+
+  /// Reset broadcast to empty on new session start.
+  Future<void> _resetBroadcast() async {
+    _broadcastController.clear();
+    await FirebaseFirestore.instance.collection('broadcast').doc('current').set({
+      'content': '',
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
   }
 
   // Debounce: write to Firestore after each keystroke with a small delay
