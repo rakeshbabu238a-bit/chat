@@ -133,8 +133,8 @@ class AuthProvider extends ChangeNotifier {
     }).toList();
   }
 
-  /// Delete a user from Firestore (admin only).
-  /// Note: This removes their profile; Firebase Auth account remains but they can't access the app.
+  /// Delete a user - removes Firestore profile.
+  /// The Firebase Auth account remains but user can't access without profile.
   Future<void> deleteUser(String uid) async {
     await FirebaseFirestore.instance.collection('users').doc(uid).delete();
   }

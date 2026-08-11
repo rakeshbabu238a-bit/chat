@@ -189,7 +189,8 @@ class AuthService {
   }
 
   /// Admin creates a new user via Firebase Auth REST API.
-  /// The user is created with 'reader' role by default.
+  /// If the email already exists in Auth (previously deleted from Firestore),
+  /// it signs in to get the UID and recreates the Firestore profile.
   Future<void> createUser(String email, String password, String displayName) async {
     final response = await _client.post(
       Uri.parse('$_signUpUrl?key=$_apiKey'),
@@ -205,6 +206,39 @@ class AuthService {
 
     if (response.statusCode != 200) {
       final errorMsg = data['error']?['message'] ?? 'User creation failed';
+
+      // If email already exists in Auth, sign in to get UID and recreate profile
+      if (errorMsg == 'EMAIL_EXISTS') {
+        final signInResponse = await _client.post(
+          Uri.parse('$_signInUrl?key=$_apiKey'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email.trim(),
+            'password': password,
+            'returnSecureToken': true,
+          }),
+        );
+
+        final signInData = jsonDecode(signInResponse.body) as Map<String, dynamic>;
+
+        if (signInResponse.statusCode != 200) {
+          throw AuthException('Email exists but password does not match. Cannot recreate user.');
+        }
+
+        final uid = signInData['localId'] as String;
+
+        // Recreate Firestore profile
+        await _users.doc(uid).set({
+          'email': email.trim(),
+          'displayName': displayName.trim(),
+          'role': UserRole.reader.name,
+          'createdAt': Timestamp.fromDate(DateTime.now()),
+        });
+
+        debugPrint('[AuthService] Recreated profile for existing Auth user $uid');
+        return;
+      }
+
       throw AuthException(_mapFirebaseError(errorMsg));
     }
 

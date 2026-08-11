@@ -21,6 +21,7 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 const { randomUUID } = require('crypto');
 
 initializeApp();
@@ -168,5 +169,46 @@ exports.onMessageCreated = onDocumentCreated(
         timestamp: Timestamp.now(),
       });
     }
+  }
+);
+
+
+// ── 3. Delete user (Auth + Firestore) ────────────────────────────────────────
+
+exports.deleteUser = onRequest(
+  {
+    cors: true,
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    const { uid } = req.body;
+    if (!uid) {
+      res.status(400).json({ error: 'uid is required' });
+      return;
+    }
+
+    try {
+      // Delete from Firebase Auth
+      await getAuth().deleteUser(uid);
+      console.log(`[deleteUser] Deleted Auth user: ${uid}`);
+    } catch (err) {
+      // User might not exist in Auth — that's okay, continue
+      console.warn(`[deleteUser] Auth delete failed for ${uid}: ${err.message}`);
+    }
+
+    try {
+      // Delete from Firestore
+      await getFirestore().collection('users').doc(uid).delete();
+      console.log(`[deleteUser] Deleted Firestore profile: ${uid}`);
+    } catch (err) {
+      console.warn(`[deleteUser] Firestore delete failed for ${uid}: ${err.message}`);
+    }
+
+    res.status(200).json({ success: true, message: `User ${uid} deleted` });
   }
 );
