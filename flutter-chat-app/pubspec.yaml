@@ -1,0 +1,38 @@
+name: flutter_chat_app
+description: AI Chat app powered by Groq (Llama 3.3) with Firestore backend.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.19.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.3.0
+  cloud_firestore: ^5.2.0
+  firebase_auth: ^5.1.0
+
+  # State management
+  provider: ^6.1.2
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  http: ^1.2.0
+  shared_preferences: ^2.2.0
+  flutter_markdown: ^0.7.3
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  # assets:
+  #   - assets/
