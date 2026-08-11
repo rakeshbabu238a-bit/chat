@@ -82,8 +82,21 @@ class _AdminScreenState extends State<AdminScreen> {
             : _nameController.text.trim(),
       );
 
+      // Auto-generate a dynamic link for the new user
+      final label = _nameController.text.trim().isEmpty
+          ? _emailController.text.split('@').first
+          : _nameController.text.trim();
+      final token = const Uuid().v4().replaceAll('-', '').substring(0, 12);
+      await FirebaseFirestore.instance.collection('userLinks').doc(token).set({
+        'label': label,
+        'email': _emailController.text.trim(),
+        'active': true,
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+        'accessCount': 0,
+      });
+
       setState(() {
-        _message = 'User created successfully';
+        _message = 'User created! Link: ${_getLinkUrl(token)}';
         _isError = false;
         _isCreating = false;
       });
@@ -92,6 +105,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _passwordController.clear();
       _nameController.clear();
       _loadUsers();
+      _loadLinks();
     } catch (e) {
       setState(() {
         _message = e.toString().replaceFirst('Exception: ', '');
