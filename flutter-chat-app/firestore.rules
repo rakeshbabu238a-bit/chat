@@ -13,6 +13,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // User links (dynamic URLs)
+    match /userLinks/{linkId} {
+      allow read, write: if true;
+    }
+
     // Chat sessions and messages
     match /chatSessions/{sessionId} {
       allow read, write: if true;
