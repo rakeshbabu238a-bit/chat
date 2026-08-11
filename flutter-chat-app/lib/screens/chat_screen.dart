@@ -102,6 +102,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (confirmed == true) {
       await provider.clearChat();
+      // Reset broadcast message for new session
+      _broadcastController.clear();
+      await _saveBroadcast();
     }
   }
 
