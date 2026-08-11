@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 
 import '../providers/auth_provider.dart';
 
@@ -22,10 +25,16 @@ class _AdminScreenState extends State<AdminScreen> {
   String? _message;
   bool _isError = false;
 
+  // User Links state
+  List<Map<String, dynamic>> _links = [];
+  bool _isLoadingLinks = true;
+  final _linkLabelController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadUsers();
+    _loadLinks();
   }
 
   @override
@@ -33,6 +42,7 @@ class _AdminScreenState extends State<AdminScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
+    _linkLabelController.dispose();
     super.dispose();
   }
 
@@ -131,6 +141,81 @@ class _AdminScreenState extends State<AdminScreen> {
         _isError = true;
       });
     }
+  }
+
+  // ── User Links methods ──
+
+  Future<void> _loadLinks() async {
+    setState(() => _isLoadingLinks = true);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('userLinks')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      setState(() {
+        _links = snapshot.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'label': data['label'] ?? '',
+            'active': data['active'] ?? true,
+            'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+            'accessCount': data['accessCount'] ?? 0,
+          };
+        }).toList();
+        _isLoadingLinks = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingLinks = false);
+    }
+  }
+
+  Future<void> _generateLink() async {
+    final label = _linkLabelController.text.trim();
+    if (label.isEmpty) {
+      setState(() {
+        _message = 'Please enter a label for the link';
+        _isError = true;
+      });
+      return;
+    }
+
+    final token = const Uuid().v4().replaceAll('-', '').substring(0, 12);
+
+    await FirebaseFirestore.instance.collection('userLinks').doc(token).set({
+      'label': label,
+      'active': true,
+      'createdAt': Timestamp.fromDate(DateTime.now()),
+      'accessCount': 0,
+    });
+
+    _linkLabelController.clear();
+    setState(() {
+      _message = 'Link generated successfully';
+      _isError = false;
+    });
+    _loadLinks();
+  }
+
+  Future<void> _deleteLink(String linkId) async {
+    await FirebaseFirestore.instance.collection('userLinks').doc(linkId).delete();
+    setState(() {
+      _message = 'Link deleted';
+      _isError = false;
+    });
+    _loadLinks();
+  }
+
+  Future<void> _toggleLink(String linkId, bool currentActive) async {
+    await FirebaseFirestore.instance.collection('userLinks').doc(linkId).update({
+      'active': !currentActive,
+    });
+    _loadLinks();
+  }
+
+  String _getLinkUrl(String token) {
+    return 'https://pinnacle-tech.in/#/link/$token';
   }
 
   @override
@@ -293,6 +378,81 @@ class _AdminScreenState extends State<AdminScreen> {
               )
             else
               ..._users.map((user) => _buildUserCard(user)),
+
+            const SizedBox(height: 28),
+
+            // ── User Links Section ──
+            _buildSectionTitle('User Links (${_links.length})'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.05)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _linkLabelController,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Link label (e.g. "John\'s link")',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13),
+                        prefixIcon: const Icon(Icons.link, color: Colors.white38, size: 20),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFF6366F1)),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: _generateLink,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Generate', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            if (_isLoadingLinks)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+                ),
+              )
+            else if (_links.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'No links generated yet',
+                    style: TextStyle(color: Colors.white.withOpacity(0.4)),
+                  ),
+                ),
+              )
+            else
+              ..._links.map((link) => _buildLinkCard(link)),
           ],
         ),
       ),
@@ -429,6 +589,134 @@ class _AdminScreenState extends State<AdminScreen> {
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLinkCard(Map<String, dynamic> link) {
+    final isActive = link['active'] as bool;
+    final url = _getLinkUrl(link['id']);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.link,
+                size: 18,
+                color: isActive ? const Color(0xFF6366F1) : Colors.white30,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  link['label'] ?? 'Unnamed',
+                  style: TextStyle(
+                    color: isActive ? Colors.white : Colors.white38,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? const Color(0xFF10B981).withOpacity(0.1)
+                      : Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  isActive ? 'Active' : 'Disabled',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? const Color(0xFF6EE7B7) : Colors.redAccent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${link['accessCount']} views',
+                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.4)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    url,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white.withOpacity(0.5),
+                      fontFamily: 'monospace',
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: url));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Link copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                        backgroundColor: Color(0xFF1E293B),
+                      ),
+                    );
+                  },
+                  child: const Icon(Icons.copy, size: 16, color: Color(0xFF818CF8)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: () => _toggleLink(link['id'], isActive),
+                icon: Icon(
+                  isActive ? Icons.pause : Icons.play_arrow,
+                  size: 16,
+                  color: isActive ? Colors.amber : Colors.greenAccent,
+                ),
+                label: Text(
+                  isActive ? 'Disable' : 'Enable',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isActive ? Colors.amber : Colors.greenAccent,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _deleteLink(link['id']),
+                icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+                label: const Text(
+                  'Delete',
+                  style: TextStyle(fontSize: 12, color: Colors.redAccent),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

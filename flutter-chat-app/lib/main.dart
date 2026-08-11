@@ -13,6 +13,7 @@ import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/reader_screen.dart';
 import 'screens/admin_screen.dart';
+import 'screens/public_reader_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,10 +55,24 @@ class MyApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF0F172A),
           cardColor: const Color(0xFF1E293B),
         ),
-        routes: {
-          '/admin': (context) => const AdminScreen(),
+        onGenerateRoute: (settings) {
+          // Handle /link/:token for public read-only access
+          final uri = Uri.parse(settings.name ?? '');
+          if (uri.pathSegments.length == 2 && uri.pathSegments[0] == 'link') {
+            final token = uri.pathSegments[1];
+            return MaterialPageRoute(
+              builder: (_) => PublicReaderScreen(token: token),
+            );
+          }
+
+          // Named routes
+          if (settings.name == '/admin') {
+            return MaterialPageRoute(builder: (_) => const AdminScreen());
+          }
+
+          return MaterialPageRoute(builder: (_) => const AuthGate());
         },
-        home: const AuthGate(),
+        initialRoute: '/',
       ),
     );
   }
@@ -81,11 +96,9 @@ class AuthGate extends StatelessWidget {
         }
 
         if (auth.isAuthenticated) {
-          // Readers see only the latest AI response
           if (auth.isReadOnly) {
             return const ReaderScreen();
           }
-          // Admins get the full chat interface
           return const ChatScreen();
         }
 
