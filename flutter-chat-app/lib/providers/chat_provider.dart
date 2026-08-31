@@ -21,8 +21,9 @@ class ChatProvider extends ChangeNotifier {
 
   ChatProvider(this._chatService) {
     _groqService = GroqService(
-      apiKey: AppConfig.groqApiKey,
-      model: AppConfig.groqModel,
+      apiKey: AppConfig.llmApiKey,
+      model: AppConfig.llmModel,
+      apiUrl: AppConfig.llmApiUrl,
     );
     _init();
   }

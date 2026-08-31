@@ -1,24 +1,29 @@
-# Flutter AI Chat — Groq + Firestore
+# Flutter AI Chat — Gemini + Firestore
 
-A Flutter chat application powered by **Groq (Llama 3.3-70b)** with **Cloud Firestore** as the backend. Mirrors the feature set of the original Spring Boot + React implementation.
+A Flutter chat application powered by **Google Gemini** (any OpenAI-compatible LLM works) with **Cloud Firestore** as the backend. Mirrors the feature set of the original Spring Boot + React implementation.
 
 ---
 
 ## Architecture
 
+The app (client path) calls the LLM directly and streams messages through Firestore:
+
 ```
-Flutter app  ──writes──►  Firestore  ──triggers──►  Cloud Function  ──calls──►  Groq API
-                │                                         │
-                └──reads (real-time stream)◄──────────────┘
+Flutter app  ──calls──►  LLM API (Gemini)
+     │
+     └──writes / reads (real-time stream)──►  Firestore
 ```
+
+An optional Cloud Function path (see `functions/index.js`) can proxy the LLM
+server-side so the key never ships in the client — it requires the Blaze plan.
 
 | Layer | Technology |
 |---|---|
 | Frontend | Flutter (Dart) |
 | State management | `provider` |
 | Database | Cloud Firestore |
-| LLM proxy | Firebase Cloud Functions (Node 20) |
-| LLM | Groq · `openai/gpt-oss-120b` |
+| LLM proxy (optional) | Firebase Cloud Functions (Node 20) |
+| LLM | Google Gemini · `models/gemini-3.6-flash` |
 
 ### Firestore schema
 
@@ -69,57 +74,45 @@ flutterfire configure --project=YOUR_FIREBASE_PROJECT_ID
 
 This generates `lib/firebase_options.dart` with your project credentials.
 
-### 4 — Set your Groq API key
+### 4 — Get an API key
 
-Get a free key at https://console.groq.com/keys.
-
-**For the Cloud Function (recommended — key never leaves the server):**
-
-```bash
-firebase functions:secrets:set GROQ_API_KEY
-# paste your key when prompted
-```
+Get a free Gemini key at https://aistudio.google.com/apikey.
+(Any OpenAI-compatible provider works — override `LLM_API_URL` / `LLM_MODEL`.)
 
 **For local Flutter development (key embedded in binary — dev only):**
 
 ```bash
 # PowerShell
-$env:GROQ_API_KEY = "gsk_..."
-flutter run --dart-define=GROQ_API_KEY=$env:GROQ_API_KEY
+$env:LLM_API_KEY = "your_gemini_key"
+flutter run --dart-define=LLM_API_KEY=$env:LLM_API_KEY
 
 # bash / zsh
-export GROQ_API_KEY=gsk_...
-flutter run --dart-define=GROQ_API_KEY=$GROQ_API_KEY
+export LLM_API_KEY=your_gemini_key
+flutter run --dart-define=LLM_API_KEY=$LLM_API_KEY
 ```
 
 ### 5 — Run locally
 
 ```bash
-# Start Firebase emulators (Firestore + Functions)
-firebase emulators:start
-
-# In a separate terminal — run the Flutter app
-flutter run --dart-define=GROQ_API_KEY=gsk_...
+flutter run -d chrome --dart-define=LLM_API_KEY=your_gemini_key
 ```
-
-Emulator UI: http://localhost:4000
 
 ### 6 — Deploy
 
-```bash
-# Deploy Firestore rules + indexes + Cloud Functions
-firebase deploy
+CI builds the web app and deploys to Firebase Hosting on push to `main`
+(see `.github/workflows/deploy-firebase.yml`). Add an `LLM_API_KEY` secret
+in your GitHub repo settings so the build can inject it.
 
-# Build Flutter for your target platform
-flutter build apk --dart-define=GROQ_API_KEY=gsk_...   # Android
-flutter build ios --dart-define=GROQ_API_KEY=gsk_...   # iOS
-flutter build web --dart-define=GROQ_API_KEY=gsk_...   # Web
+To build manually:
+
+```bash
+flutter build web --dart-define=LLM_API_KEY=your_gemini_key    # Web
+flutter build apk --dart-define=LLM_API_KEY=your_gemini_key    # Android
 ```
 
-> **Production tip:** With the Cloud Function deployed, the Flutter app
-> does **not** need `--dart-define=GROQ_API_KEY` at all. The function
-> holds the secret and writes replies back to Firestore automatically.
-> See the two-interface design in `functions/index.js`.
+> **Production tip:** To keep the key off the client entirely, use the
+> Cloud Function path in `functions/index.js` (requires the Blaze plan).
+> The function holds the secret and writes replies back to Firestore.
 
 ---
 
@@ -137,7 +130,7 @@ flutter-chat-app/
 │   │   └── chat_session.dart      # Session model
 │   ├── services/
 │   │   ├── chat_service.dart      # All Firestore reads/writes
-│   │   └── groq_service.dart      # Direct Groq API calls (dev mode)
+│   │   └── groq_service.dart      # Direct LLM API calls (OpenAI-compatible)
 │   ├── providers/
 │   │   └── chat_provider.dart     # ChangeNotifier state manager
 │   ├── screens/
@@ -169,7 +162,7 @@ flutter-chat-app/
 - Enter to send / Shift+Enter for new line (desktop/web)
 - Clear chat with confirmation dialog
 - Token usage stored alongside each assistant message in Firestore
-- Error bubbles surface Groq API failures gracefully
+- Error bubbles surface LLM API failures gracefully
 
 ---
 
@@ -180,8 +173,8 @@ flutter-chat-app/
 | Frontend | React (Vite) | Flutter |
 | Backend | Spring Boot (Java) | Firebase Cloud Functions (Node) |
 | Storage | Stateless (no persistence) | Cloud Firestore |
-| API key location | Server environment variable | Firebase Secret Manager |
-| LLM | Groq openai/gpt-oss-120b | Same |
+| API key location | Server environment variable | Build-time --dart-define (or Secret Manager via Cloud Function) |
+| LLM | Groq | Google Gemini (`models/gemini-3.6-flash`) |
 | Real-time | No (HTTP polling) | Yes (Firestore streams) |
 
 ---
@@ -193,4 +186,4 @@ flutter-chat-app/
   allow read, write: if request.auth != null;
   ```
 - Enable Firebase Authentication (Google / email) and update rules accordingly.
-- The Groq API key is stored in Firebase Secret Manager when using Cloud Functions — it is never shipped in the Flutter binary.
+- On the client path, the LLM API key is embedded in the compiled build (`--dart-define`). This is fine for personal/dev use but not for a public app. To keep the key off the client, use the Cloud Function path — the key then lives in Firebase Secret Manager and is never shipped in the Flutter binary.
