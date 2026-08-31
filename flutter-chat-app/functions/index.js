@@ -13,7 +13,7 @@
  *
  * Environment variables (set with `firebase functions:secrets:set GROQ_API_KEY`):
  *   GROQ_API_KEY  — your Groq API key
- *   GROQ_MODEL    — optional, defaults to llama-3.3-70b-versatile
+ *   GROQ_MODEL    — optional, defaults to openai/gpt-oss-120b
  */
 
 const { onRequest } = require('firebase-functions/v2/https');
@@ -28,7 +28,7 @@ initializeApp();
 
 const GROQ_API_KEY = defineSecret('GROQ_API_KEY');
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 

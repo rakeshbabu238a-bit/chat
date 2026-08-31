@@ -6,7 +6,7 @@ import '../models/chat_message.dart';
 
 const _groqApiUrl =
     'https://api.groq.com/openai/v1/chat/completions';
-const _defaultModel = 'llama-3.3-70b-versatile';
+const _defaultModel = 'openai/gpt-oss-120b';
 const _systemPrompt =
     'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 

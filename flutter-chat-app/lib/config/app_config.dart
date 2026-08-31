@@ -20,7 +20,7 @@ class AppConfig {
 
   static const groqModel = String.fromEnvironment(
     'GROQ_MODEL',
-    defaultValue: 'llama-3.3-70b-versatile',
+    defaultValue: 'openai/gpt-oss-120b',
   );
 
   static bool get isGroqConfigured => groqApiKey.isNotEmpty;

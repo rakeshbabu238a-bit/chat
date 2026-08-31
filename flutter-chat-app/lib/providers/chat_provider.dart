@@ -20,7 +20,10 @@ class ChatProvider extends ChangeNotifier {
   final _uuid = const Uuid();
 
   ChatProvider(this._chatService) {
-    _groqService = GroqService(apiKey: AppConfig.groqApiKey);
+    _groqService = GroqService(
+      apiKey: AppConfig.groqApiKey,
+      model: AppConfig.groqModel,
+    );
     _init();
   }
 

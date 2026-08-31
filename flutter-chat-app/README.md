@@ -18,7 +18,7 @@ Flutter app  ──writes──►  Firestore  ──triggers──►  Cloud Fu
 | State management | `provider` |
 | Database | Cloud Firestore |
 | LLM proxy | Firebase Cloud Functions (Node 20) |
-| LLM | Groq · `llama-3.3-70b-versatile` |
+| LLM | Groq · `openai/gpt-oss-120b` |
 
 ### Firestore schema
 
@@ -181,7 +181,7 @@ flutter-chat-app/
 | Backend | Spring Boot (Java) | Firebase Cloud Functions (Node) |
 | Storage | Stateless (no persistence) | Cloud Firestore |
 | API key location | Server environment variable | Firebase Secret Manager |
-| LLM | Groq llama-3.3-70b-versatile | Same |
+| LLM | Groq openai/gpt-oss-120b | Same |
 | Real-time | No (HTTP polling) | Yes (Firestore streams) |
 
 ---
