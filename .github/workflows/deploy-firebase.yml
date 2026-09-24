@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'flutter-chat-app/**'
+      - '.github/workflows/deploy-firebase.yml'
   workflow_dispatch:
 
 jobs:
