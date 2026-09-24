@@ -1,5 +1,8 @@
 /**
- * Firebase Cloud Functions — Groq LLM proxy
+ * Firebase Cloud Functions — LLM proxy (OpenAI-compatible)
+ *
+ * The LLM API key lives ONLY here as a server-side secret — it is never
+ * shipped in the Flutter web bundle. The client calls the /chat endpoint.
  *
  * This function exposes two interfaces:
  *
@@ -8,12 +11,14 @@
  *    Returns  { reply, model, promptTokens, completionTokens, totalTokens }
  *
  * 2. Firestore trigger  onCreate chatSessions/{sessionId}/messages/{messageId}
- *    When a "user" role message is written, automatically calls Groq and
+ *    When a "user" role message is written, automatically calls the LLM and
  *    writes the assistant reply back to the same sub-collection.
  *
- * Environment variables (set with `firebase functions:secrets:set GROQ_API_KEY`):
- *   GROQ_API_KEY  — your Groq API key
- *   GROQ_MODEL    — optional, defaults to openai/gpt-oss-120b
+ * Config:
+ *   Secret  LLM_API_KEY  — your provider key (Gemini, Groq, OpenAI, ...)
+ *     firebase functions:secrets:set LLM_API_KEY
+ *   Env     LLM_MODEL    — optional, defaults to gemini-flash-latest
+ *   Env     LLM_API_URL  — optional, defaults to the Gemini OpenAI-compat URL
  */
 
 const { onRequest } = require('firebase-functions/v2/https');
@@ -26,16 +31,18 @@ const { randomUUID } = require('crypto');
 
 initializeApp();
 
-const GROQ_API_KEY = defineSecret('GROQ_API_KEY');
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = 'openai/gpt-oss-120b';
+const LLM_API_KEY = defineSecret('LLM_API_KEY');
+const DEFAULT_API_URL =
+  'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+const DEFAULT_MODEL = 'gemini-flash-latest';
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 
-// ── Shared Groq call ─────────────────────────────────────────────────────────
+// ── Shared LLM call (OpenAI-compatible) ──────────────────────────────────────
 
-async function callGroq(messages, apiKey) {
-  const model = process.env.GROQ_MODEL || DEFAULT_MODEL;
+async function callLlm(messages, apiKey) {
+  const model = process.env.LLM_MODEL || DEFAULT_MODEL;
+  const apiUrl = process.env.LLM_API_URL || DEFAULT_API_URL;
 
   const payload = {
     model,
@@ -47,7 +54,7 @@ async function callGroq(messages, apiKey) {
   // node-fetch v3 is ESM-only; we use dynamic import for CJS compat
   const { default: fetch } = await import('node-fetch');
 
-  const response = await fetch(GROQ_API_URL, {
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,21 +65,21 @@ async function callGroq(messages, apiKey) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    const msg = err?.error?.message || `Groq request failed (${response.status})`;
+    const msg = err?.error?.message || `LLM request failed (${response.status})`;
     throw new Error(msg);
   }
 
   const data = await response.json();
-  const reply = data.choices[0].message.content;
-  const usage = data.usage;
+  const reply = data.choices?.[0]?.message?.content ?? '';
+  const usage = data.usage || {};
   const usedModel = data.model || model;
 
   return {
     reply,
     model: usedModel,
-    promptTokens: usage.prompt_tokens,
-    completionTokens: usage.completion_tokens,
-    totalTokens: usage.total_tokens,
+    promptTokens: usage.prompt_tokens || 0,
+    completionTokens: usage.completion_tokens || 0,
+    totalTokens: usage.total_tokens || 0,
   };
 }
 
@@ -80,7 +87,7 @@ async function callGroq(messages, apiKey) {
 
 exports.chat = onRequest(
   {
-    secrets: [GROQ_API_KEY],
+    secrets: [LLM_API_KEY],
     cors: true,           // allow all origins; tighten for production
     timeoutSeconds: 60,
   },
@@ -97,10 +104,10 @@ exports.chat = onRequest(
     }
 
     try {
-      const result = await callGroq(messages, GROQ_API_KEY.value());
+      const result = await callLlm(messages, LLM_API_KEY.value());
       res.status(200).json(result);
     } catch (err) {
-      console.error('[chat] Groq error:', err.message);
+      console.error('[chat] LLM error:', err.message);
       res.status(502).json({ error: err.message });
     }
   }
@@ -111,7 +118,7 @@ exports.chat = onRequest(
 exports.onMessageCreated = onDocumentCreated(
   {
     document: 'chatSessions/{sessionId}/messages/{messageId}',
-    secrets: [GROQ_API_KEY],
+    secrets: [LLM_API_KEY],
     timeoutSeconds: 60,
   },
   async (event) => {
@@ -136,7 +143,7 @@ exports.onMessageCreated = onDocumentCreated(
       .map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      const result = await callGroq(history, GROQ_API_KEY.value());
+      const result = await callLlm(history, LLM_API_KEY.value());
 
       const assistantDoc = {
         role: 'assistant',
@@ -160,7 +167,7 @@ exports.onMessageCreated = onDocumentCreated(
         `[onMessageCreated] Reply written for session=${sessionId} tokens=${result.totalTokens}`
       );
     } catch (err) {
-      console.error('[onMessageCreated] Groq error:', err.message);
+      console.error('[onMessageCreated] LLM error:', err.message);
 
       // Write an error bubble so the Flutter UI surfaces the failure
       await messagesRef.doc(randomUUID()).set({

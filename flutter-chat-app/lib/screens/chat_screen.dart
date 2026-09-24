@@ -259,7 +259,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               Text(
-                'Powered by Groq · Llama 3.3',
+                'Powered by Google Gemini',
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.white.withOpacity(0.5),

@@ -4,27 +4,21 @@ import 'package:uuid/uuid.dart';
 
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
-import '../services/groq_service.dart';
-import '../config/app_config.dart';
 
 /// Central state manager for the chat screen.
 ///
 /// Responsibilities:
 /// - Own the active session ID
 /// - Stream messages from Firestore
-/// - Send user messages and trigger Groq replies
+/// - Persist user messages (the server-side `onMessageCreated` Cloud Function
+///   generates the assistant reply and writes it back to Firestore, which we
+///   pick up via the stream — the LLM API key never reaches the client)
 /// - Handle loading / error state
 class ChatProvider extends ChangeNotifier {
   final ChatService _chatService;
-  late final GroqService _groqService;
   final _uuid = const Uuid();
 
   ChatProvider(this._chatService) {
-    _groqService = GroqService(
-      apiKey: AppConfig.llmApiKey,
-      model: AppConfig.llmModel,
-      apiUrl: AppConfig.llmApiUrl,
-    );
     _init();
   }
 
@@ -53,7 +47,8 @@ class ChatProvider extends ChangeNotifier {
     final id = await _chatService.createSession();
     _sessionId = id;
 
-    // Seed the opening assistant greeting (not persisted to API history)
+    // Seed the opening assistant greeting. Role is `assistant`, so the
+    // server-side trigger (which only fires on `user` messages) ignores it.
     final greeting = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.assistant,
@@ -64,13 +59,25 @@ class ChatProvider extends ChangeNotifier {
 
     _messagesSub = _chatService.messagesStream(id).listen((msgs) {
       _messages = msgs;
+
+      // Stop the "typing" indicator once the assistant (or an error) replies.
+      if (_isLoading && msgs.isNotEmpty) {
+        final last = msgs.last;
+        if (last.role == MessageRole.assistant ||
+            last.role == MessageRole.error) {
+          _isLoading = false;
+          if (last.role == MessageRole.error) _error = last.content;
+        }
+      }
+
       notifyListeners();
     });
   }
 
   // ── Public actions ───────────────────────────────────────────────────────
 
-  /// Send a user message and fetch the assistant reply.
+  /// Send a user message. The assistant reply is produced server-side by the
+  /// `onMessageCreated` Cloud Function and streamed back via Firestore.
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _isLoading || _sessionId == null) return;
@@ -78,45 +85,27 @@ class ChatProvider extends ChangeNotifier {
     _setLoading(true);
     _error = null;
 
-    // 1. Persist the user message
+    // Persist the user message — this triggers the server-side reply.
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.user,
       content: trimmed,
       timestamp: DateTime.now(),
     );
-    await _chatService.addMessage(_sessionId!, userMsg);
 
     // Update session title from the first user message
     final isFirstUserMessage =
-        _messages.where((m) => m.role == MessageRole.user).length == 1;
-    if (isFirstUserMessage) {
-      await _chatService.updateSessionTitle(_sessionId!, trimmed);
-    }
+        _messages.where((m) => m.role == MessageRole.user).isEmpty;
 
     try {
-      // 2. Build conversation history (exclude error bubbles)
-      final history = _messages
-          .where((m) => m.role != MessageRole.error)
-          .toList();
-
-      // 3. Call Groq
-      final result = await _groqService.chat(history);
-
-      // 4. Persist the assistant reply with token usage
-      final assistantMsg = ChatMessage(
-        id: _uuid.v4(),
-        role: MessageRole.assistant,
-        content: result.reply,
-        timestamp: DateTime.now(),
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        totalTokens: result.totalTokens,
-        model: result.model,
-      );
-      await _chatService.addMessage(_sessionId!, assistantMsg);
+      await _chatService.addMessage(_sessionId!, userMsg);
+      if (isFirstUserMessage) {
+        await _chatService.updateSessionTitle(_sessionId!, trimmed);
+      }
+      // The assistant reply arrives asynchronously via messagesStream, which
+      // clears the loading flag. Nothing else to do here.
     } catch (e) {
-      // 5. Persist an error bubble so the UI stays consistent
+      // Failed to even persist the message — surface an error bubble.
       final errMsg = ChatMessage(
         id: _uuid.v4(),
         role: MessageRole.error,
@@ -125,7 +114,6 @@ class ChatProvider extends ChangeNotifier {
       );
       await _chatService.addMessage(_sessionId!, errMsg);
       _error = errMsg.content;
-    } finally {
       _setLoading(false);
     }
   }
@@ -155,7 +143,6 @@ class ChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     _messagesSub?.cancel();
-    _groqService.dispose();
     super.dispose();
   }
 }

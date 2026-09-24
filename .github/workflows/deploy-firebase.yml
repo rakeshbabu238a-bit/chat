@@ -22,13 +22,37 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Install dependencies
+      - name: Install Flutter dependencies
         working-directory: flutter-chat-app
         run: flutter pub get
 
+      # The LLM API key is NOT baked into the web build. It lives only as a
+      # Firebase secret consumed by the Cloud Function (see functions/index.js).
+      # The client writes user messages to Firestore; the `onMessageCreated`
+      # function generates the reply server-side and streams it back.
       - name: Build Flutter web
         working-directory: flutter-chat-app
-        run: flutter build web --release --dart-define=LLM_API_KEY=${{ secrets.LLM_API_KEY }}
+        run: flutter build web --release
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Cloud Functions dependencies
+        working-directory: flutter-chat-app/functions
+        run: npm ci
+
+      # Deploy the Cloud Functions and Firestore rules that power the
+      # server-side LLM proxy. Requires the LLM_API_KEY secret to be set:
+      #   firebase functions:secrets:set LLM_API_KEY
+      - name: Deploy Functions and Firestore rules
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only functions,firestore:rules --project buddy-ec712
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT_PATH: ./flutter-chat-app
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
