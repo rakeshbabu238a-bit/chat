@@ -45,12 +45,6 @@ export default {
     }
 
     const url = new URL(request.url);
-    if (url.pathname !== '/chat') {
-      return json({ error: 'Not found' }, 404, env);
-    }
-    if (request.method !== 'POST') {
-      return json({ error: 'Method not allowed' }, 405, env);
-    }
 
     // Trim to defend against a trailing newline/space captured when the
     // secret was set — Gemini rejects "Bearer <key>\n" with a 401.
@@ -61,6 +55,30 @@ export default {
         500,
         env,
       );
+    }
+
+    // Diagnostic: GET /models lists the model IDs the configured key supports.
+    // Lets you confirm a valid LLM_MODEL without exposing the key anywhere.
+    if (url.pathname === '/models' && request.method === 'GET') {
+      const base = (env.LLM_API_URL || DEFAULT_API_URL).replace(
+        '/chat/completions',
+        '/models',
+      );
+      const r = await fetch(base, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      const body = await r.text();
+      return new Response(body, {
+        status: r.status,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(env) },
+      });
+    }
+
+    if (url.pathname !== '/chat') {
+      return json({ error: 'Not found' }, 404, env);
+    }
+    if (request.method !== 'POST') {
+      return json({ error: 'Method not allowed' }, 405, env);
     }
 
     let messages;
