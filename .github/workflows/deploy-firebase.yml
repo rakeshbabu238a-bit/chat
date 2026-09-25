@@ -1,5 +1,7 @@
 name: Deploy Flutter to Firebase Hosting
 
+# Rebuild trigger: wire CHAT_API_URL (Cloudflare Worker) into the web build.
+
 on:
   push:
     branches:
