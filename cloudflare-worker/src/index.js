@@ -52,7 +52,10 @@ export default {
       return json({ error: 'Method not allowed' }, 405, env);
     }
 
-    if (!env.LLM_API_KEY) {
+    // Trim to defend against a trailing newline/space captured when the
+    // secret was set — Gemini rejects "Bearer <key>\n" with a 401.
+    const apiKey = (env.LLM_API_KEY || '').trim();
+    if (!apiKey) {
       return json(
         { error: 'Server is missing LLM_API_KEY. Run: wrangler secret put LLM_API_KEY' },
         500,
@@ -87,7 +90,7 @@ export default {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.LLM_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(payload),
       });
@@ -96,9 +99,15 @@ export default {
     }
 
     if (!upstream.ok) {
-      const errBody = await upstream.json().catch(() => ({}));
-      const msg =
-        errBody?.error?.message || `LLM request failed (${upstream.status})`;
+      const raw = await upstream.text();
+      let msg = `LLM request failed (${upstream.status})`;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.error?.message) msg = parsed.error.message;
+        else if (typeof parsed?.error === 'string') msg = parsed.error;
+      } catch {
+        if (raw) msg = `${msg}: ${raw.slice(0, 200)}`;
+      }
       return json({ error: msg }, 502, env);
     }
 
