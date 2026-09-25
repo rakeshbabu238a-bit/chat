@@ -24,12 +24,34 @@ const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 
-function isTransient(status) {
-  return status === 429 || status === 503;
+// 503 = overloaded (safe to retry/fall back). 429 = quota exhausted, where
+// retrying or trying other models just burns more of the (tiny) free quota,
+// so we surface it immediately instead.
+function isRetryable(status) {
+  return status === 503;
 }
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// Build a clean error Response from a failed upstream reply, given the
+// already-read status and body text (the body stream can only be read once).
+function upstreamError(status, rawBody, env) {
+  let msg = `LLM request failed (${status})`;
+  try {
+    const parsed = JSON.parse(rawBody);
+    if (parsed?.error?.message) msg = parsed.error.message;
+    else if (typeof parsed?.error === 'string') msg = parsed.error;
+  } catch {
+    if (rawBody) msg = `${msg}: ${rawBody.slice(0, 200)}`;
+  }
+  if (status === 429) {
+    msg =
+      'The AI is rate-limited right now (free-tier quota reached). ' +
+      'Please wait a minute and try again.';
+  }
+  return json({ error: msg }, status === 429 ? 429 : 502, env);
 }
 
 function corsHeaders(env) {
@@ -167,29 +189,21 @@ export default {
         lastStatus = upstream.status;
         lastBody = await upstream.text();
 
-        if (isTransient(upstream.status) && attempt < maxAttempts) {
+        if (isRetryable(upstream.status) && attempt < maxAttempts) {
           await sleep(400 * attempt);
-          continue; // retry same model
+          continue; // retry same model on 503 (overloaded)
         }
-        // Non-transient (e.g. 400/401): no point retrying or trying other
-        // models with the same payload — stop and report.
-        if (!isTransient(upstream.status)) {
-          break;
+        // 429 (quota) or 4xx: retrying/falling back wastes quota and won't
+        // help. Stop immediately and report the upstream error.
+        if (!isRetryable(upstream.status)) {
+          return upstreamError(lastStatus, lastBody, env);
         }
-        // Transient and out of attempts for this model — try next model.
+        // 503 and out of attempts for this model — try the next model.
         break;
       }
     }
 
-    // Everything failed. Surface the most useful message we have.
-    let msg = `LLM request failed (${lastStatus || 502})`;
-    try {
-      const parsed = JSON.parse(lastBody);
-      if (parsed?.error?.message) msg = parsed.error.message;
-      else if (typeof parsed?.error === 'string') msg = parsed.error;
-    } catch {
-      if (lastBody) msg = `${msg}: ${lastBody.slice(0, 200)}`;
-    }
-    return json({ error: msg }, 502, env);
+    // Everything failed (all models 503'd through their retries).
+    return upstreamError(lastStatus || 502, lastBody, env);
   },
 };
