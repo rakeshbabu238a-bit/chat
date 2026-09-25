@@ -18,8 +18,19 @@
 const DEFAULT_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const DEFAULT_MODEL = 'gemini-flash-latest';
+// Stable fallbacks tried (in order) when the primary model is overloaded
+// (429/503). Keep to widely-available models the key supports.
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
+
+function isTransient(status) {
+  return status === 429 || status === 503;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function corsHeaders(env) {
   return {
@@ -92,75 +103,93 @@ export default {
       return json({ error: 'messages must be a non-empty array' }, 400, env);
     }
 
-    const model = env.LLM_MODEL || DEFAULT_MODEL;
     const apiUrl = env.LLM_API_URL || DEFAULT_API_URL;
+    const primary = env.LLM_MODEL || DEFAULT_MODEL;
+    // Try the primary model first, then stable fallbacks (deduped).
+    const models = [primary, ...FALLBACK_MODELS].filter(
+      (m, i, arr) => m && arr.indexOf(m) === i,
+    );
 
-    const payload = {
-      model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
-      temperature: 0.7,
-      max_tokens: 1024,
-    };
-
-    // Gemini occasionally returns 429/503 (rate limited / overloaded).
-    // Retry a few times with a short backoff before giving up.
-    const doFetch = () =>
+    const callModel = (model) =>
       fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+          temperature: 0.7,
+          max_tokens: 1024,
+        }),
       });
 
-    let upstream;
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        upstream = await doFetch();
-      } catch (err) {
-        if (attempt === maxAttempts) {
-          return json({ error: `Upstream request failed: ${err.message}` }, 502, env);
+    // Track the last transient failure so we can report it if everything fails.
+    let lastStatus = 0;
+    let lastBody = '';
+
+    for (const model of models) {
+      // Per-model retry with short backoff for transient 429/503.
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let upstream;
+        try {
+          upstream = await callModel(model);
+        } catch (err) {
+          lastStatus = 502;
+          lastBody = `Upstream request failed: ${err.message}`;
+          if (attempt < maxAttempts) {
+            await sleep(400 * attempt);
+            continue;
+          }
+          break; // move to next model
         }
-        await new Promise((r) => setTimeout(r, 400 * attempt));
-        continue;
+
+        if (upstream.ok) {
+          const data = await upstream.json();
+          const reply = data.choices?.[0]?.message?.content ?? '';
+          const usage = data.usage || {};
+          return json(
+            {
+              reply,
+              model: data.model || model,
+              promptTokens: usage.prompt_tokens || 0,
+              completionTokens: usage.completion_tokens || 0,
+              totalTokens: usage.total_tokens || 0,
+            },
+            200,
+            env,
+          );
+        }
+
+        // Not OK — record and decide whether to retry / fall through.
+        lastStatus = upstream.status;
+        lastBody = await upstream.text();
+
+        if (isTransient(upstream.status) && attempt < maxAttempts) {
+          await sleep(400 * attempt);
+          continue; // retry same model
+        }
+        // Non-transient (e.g. 400/401): no point retrying or trying other
+        // models with the same payload — stop and report.
+        if (!isTransient(upstream.status)) {
+          break;
+        }
+        // Transient and out of attempts for this model — try next model.
+        break;
       }
-      // Retry only on transient statuses; otherwise stop.
-      if ((upstream.status === 429 || upstream.status === 503) && attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, 400 * attempt));
-        continue;
-      }
-      break;
     }
 
-    if (!upstream.ok) {
-      const raw = await upstream.text();
-      let msg = `LLM request failed (${upstream.status})`;
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed?.error?.message) msg = parsed.error.message;
-        else if (typeof parsed?.error === 'string') msg = parsed.error;
-      } catch {
-        if (raw) msg = `${msg}: ${raw.slice(0, 200)}`;
-      }
-      return json({ error: msg }, 502, env);
+    // Everything failed. Surface the most useful message we have.
+    let msg = `LLM request failed (${lastStatus || 502})`;
+    try {
+      const parsed = JSON.parse(lastBody);
+      if (parsed?.error?.message) msg = parsed.error.message;
+      else if (typeof parsed?.error === 'string') msg = parsed.error;
+    } catch {
+      if (lastBody) msg = `${msg}: ${lastBody.slice(0, 200)}`;
     }
-
-    const data = await upstream.json();
-    const reply = data.choices?.[0]?.message?.content ?? '';
-    const usage = data.usage || {};
-
-    return json(
-      {
-        reply,
-        model: data.model || model,
-        promptTokens: usage.prompt_tokens || 0,
-        completionTokens: usage.completion_tokens || 0,
-        totalTokens: usage.total_tokens || 0,
-      },
-      200,
-      env,
-    );
+    return json({ error: msg }, 502, env);
   },
 };
