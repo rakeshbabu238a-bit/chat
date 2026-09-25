@@ -19,8 +19,9 @@ const DEFAULT_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 // Stable fallbacks tried (in order) when the primary model is overloaded
-// (429/503). Keep to widely-available models the key supports.
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+// (503). Use the concrete model IDs with the "models/" prefix, matching
+// what GET /models returns for the Gemini OpenAI-compat endpoint.
+const FALLBACK_MODELS = ['models/gemini-2.5-flash', 'models/gemini-flash-latest'];
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 
