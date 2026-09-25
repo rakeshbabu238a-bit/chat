@@ -102,9 +102,10 @@ export default {
       max_tokens: 1024,
     };
 
-    let upstream;
-    try {
-      upstream = await fetch(apiUrl, {
+    // Gemini occasionally returns 429/503 (rate limited / overloaded).
+    // Retry a few times with a short backoff before giving up.
+    const doFetch = () =>
+      fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,8 +113,25 @@ export default {
         },
         body: JSON.stringify(payload),
       });
-    } catch (err) {
-      return json({ error: `Upstream request failed: ${err.message}` }, 502, env);
+
+    let upstream;
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        upstream = await doFetch();
+      } catch (err) {
+        if (attempt === maxAttempts) {
+          return json({ error: `Upstream request failed: ${err.message}` }, 502, env);
+        }
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+      // Retry only on transient statuses; otherwise stop.
+      if ((upstream.status === 429 || upstream.status === 503) && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        continue;
+      }
+      break;
     }
 
     if (!upstream.ok) {
