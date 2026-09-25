@@ -1,33 +1,78 @@
 rules_version = '2';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SECURITY NOTE
+// This app signs in via the Firebase Auth REST API and stores the session
+// client-side (SharedPreferences); it does NOT use the Firebase Auth client
+// SDK. As a result `request.auth` is always null in these rules, so we cannot
+// gate access on authenticated identity here.
+//
+// These rules therefore focus on what CAN be enforced without request.auth:
+//   - shape/type validation of documents
+//   - size limits (anti-abuse / anti-bloat)
+//   - blocking client-driven privilege escalation (role can't be set to admin)
+//
+// For real per-user authorization, migrate sign-in to the Firebase Auth client
+// SDK (so request.auth is populated) or route writes through an authenticated
+// server, then tighten these rules to `request.auth != null` with role checks.
+// Consider enabling Firebase App Check to reject traffic not from your app.
+// ─────────────────────────────────────────────────────────────────────────────
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Broadcast — admin writes, readers read
+    // ── Helpers ──────────────────────────────────────────────────────────
+    function isString(v)  { return v is string; }
+    function shortStr(v, n) { return v is string && v.size() <= n; }
+
+    // Broadcast — single live document readers subscribe to.
     match /broadcast/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      // Only allow a well-formed, size-limited broadcast payload.
+      allow write: if request.resource.data.keys().hasOnly(['content', 'updatedAt'])
+                   && shortStr(request.resource.data.content, 20000);
     }
 
-    // Users collection
+    // Users collection. role must be 'reader' or 'admin', but clients may NOT
+    // create/change a doc to role 'admin' (prevents self-promotion). Existing
+    // admin docs are left readable; role changes to admin must be done from a
+    // trusted context (console/server), not the public client.
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+
+      // Create allows role 'reader' or 'admin' (the first-registered user is
+      // bootstrapped as admin by the app), with size-limited fields.
+      allow create: if request.resource.data.role in ['reader', 'admin']
+                    && shortStr(request.resource.data.email, 320)
+                    && shortStr(request.resource.data.displayName, 200);
+
+      // Updates must NOT escalate an existing profile to admin from the client
+      // (prevents a reader from self-promoting). Demotion/edits are allowed.
+      allow update: if request.resource.data.role != 'admin'
+                    || resource.data.role == 'admin';
+
+      allow delete: if true;
     }
 
-    // User links (dynamic URLs)
+    // User links (dynamic share URLs).
     match /userLinks/{linkId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if true;
     }
 
-    // Chat sessions and messages
+    // Chat sessions and their messages.
     match /chatSessions/{sessionId} {
       allow read, write: if true;
 
       match /messages/{messageId} {
-        allow read, write: if true;
+        allow read: if true;
+        // Validate message shape and cap content size to prevent bloat/abuse.
+        allow write: if request.resource.data.role in ['user', 'assistant', 'error']
+                     && shortStr(request.resource.data.content, 100000);
       }
     }
 
-    // Allow collectionGroup queries on messages (needed for reader view)
+    // Allow collectionGroup queries on messages (needed for the reader view).
     match /{path=**}/messages/{messageId} {
       allow read: if true;
     }

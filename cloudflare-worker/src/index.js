@@ -39,7 +39,7 @@ function sleep(ms) {
 
 // Build a clean error Response from a failed upstream reply, given the
 // already-read status and body text (the body stream can only be read once).
-function upstreamError(status, rawBody, env) {
+function upstreamError(status, rawBody, cors) {
   let msg = `LLM request failed (${status})`;
   try {
     const parsed = JSON.parse(rawBody);
@@ -53,30 +53,45 @@ function upstreamError(status, rawBody, env) {
       'The AI is rate-limited right now (free-tier quota reached). ' +
       'Please wait a minute and try again.';
   }
-  return json({ error: msg }, status === 429 ? 429 : 502, env);
+  return json({ error: msg }, status === 429 ? 429 : 502, cors);
 }
 
-function corsHeaders(env) {
+// Resolve CORS headers for this request. ALLOW_ORIGIN may be a single origin,
+// a comma-separated allowlist, or "*". When it's an allowlist, echo back the
+// request's Origin only if it matches.
+function corsHeaders(request, env) {
+  const configured = (env.ALLOW_ORIGIN || '*').trim();
+  let allowOrigin = configured;
+  if (configured !== '*') {
+    const allowed = configured.split(',').map((o) => o.trim());
+    const origin = request.headers.get('Origin');
+    // Default to the first configured origin (non-browser callers send no
+    // Origin); echo the request origin when it's in the allowlist.
+    allowOrigin = origin && allowed.includes(origin) ? origin : allowed[0];
+  }
   return {
-    'Access-Control-Allow-Origin': env.ALLOW_ORIGIN || '*',
+    'Access-Control-Allow-Origin': allowOrigin,
+    Vary: 'Origin',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   };
 }
 
-function json(body, status, env) {
+function json(body, status, cors) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(env) },
+    headers: { 'Content-Type': 'application/json', ...cors },
   });
 }
 
 export default {
   async fetch(request, env) {
+    const cors = corsHeaders(request, env);
+
     // CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(env) });
+      return new Response(null, { status: 204, headers: cors });
     }
 
     const url = new URL(request.url);
@@ -88,7 +103,7 @@ export default {
       return json(
         { error: 'Server is missing LLM_API_KEY. Run: wrangler secret put LLM_API_KEY' },
         500,
-        env,
+        cors,
       );
     }
 
@@ -105,15 +120,15 @@ export default {
       const body = await r.text();
       return new Response(body, {
         status: r.status,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders(env) },
+        headers: { 'Content-Type': 'application/json', ...cors },
       });
     }
 
     if (url.pathname !== '/chat') {
-      return json({ error: 'Not found' }, 404, env);
+      return json({ error: 'Not found' }, 404, cors);
     }
     if (request.method !== 'POST') {
-      return json({ error: 'Method not allowed' }, 405, env);
+      return json({ error: 'Method not allowed' }, 405, cors);
     }
 
     let messages;
@@ -121,10 +136,10 @@ export default {
       const parsed = await request.json();
       messages = parsed.messages;
     } catch {
-      return json({ error: 'Invalid JSON body' }, 400, env);
+      return json({ error: 'Invalid JSON body' }, 400, cors);
     }
     if (!Array.isArray(messages) || messages.length === 0) {
-      return json({ error: 'messages must be a non-empty array' }, 400, env);
+      return json({ error: 'messages must be a non-empty array' }, 400, cors);
     }
 
     const apiUrl = env.LLM_API_URL || DEFAULT_API_URL;
@@ -184,7 +199,7 @@ export default {
               totalTokens: usage.total_tokens || 0,
             },
             200,
-            env,
+            cors,
           );
         }
 
@@ -199,7 +214,7 @@ export default {
         // 429 (quota) or 4xx: retrying/falling back wastes quota and won't
         // help. Stop immediately and report the upstream error.
         if (!isRetryable(upstream.status)) {
-          return upstreamError(lastStatus, lastBody, env);
+          return upstreamError(lastStatus, lastBody, cors);
         }
         // 503 and out of attempts for this model — try the next model.
         break;
@@ -207,6 +222,6 @@ export default {
     }
 
     // Everything failed (all models 503'd through their retries).
-    return upstreamError(lastStatus || 502, lastBody, env);
+    return upstreamError(lastStatus || 502, lastBody, cors);
   },
 };

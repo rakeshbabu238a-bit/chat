@@ -15,5 +15,6 @@ LLM_MODEL = "openai/gpt-oss-120b"
 # To switch back to Gemini instead, comment out the two lines above; the
 # Worker then defaults to the Gemini OpenAI-compat endpoint + gemini-flash-latest.
 
-# Lock CORS to your site for production instead of the default "*":
-# ALLOW_ORIGIN = "https://pinnacle-tech.in"
+# Lock CORS so only your site(s) can call the Worker (and consume your quota).
+# Comma-separated allowlist; the Worker echoes back the matching origin.
+ALLOW_ORIGIN = "https://pinnacle-tech.in,https://buddy-ec712.web.app"
