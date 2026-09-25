@@ -10,7 +10,7 @@ compatibility_date = "2024-09-01"
 # The API key is the GROQ key, stored as the LLM_API_KEY secret:
 #   wrangler secret put LLM_API_KEY   (paste your gsk_... Groq key)
 LLM_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_MODEL = "openai/gpt-oss-120b"
 
 # To switch back to Gemini instead, comment out the two lines above; the
 # Worker then defaults to the Gemini OpenAI-compat endpoint + gemini-flash-latest.
