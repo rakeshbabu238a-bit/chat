@@ -19,9 +19,9 @@ const DEFAULT_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 // Stable fallbacks tried (in order) when the primary model is overloaded
-// (503). Use the concrete model IDs with the "models/" prefix, matching
-// what GET /models returns for the Gemini OpenAI-compat endpoint.
-const FALLBACK_MODELS = ['models/gemini-2.5-flash', 'models/gemini-flash-latest'];
+// (503). Bare model IDs — the OpenAI-compat chat endpoint accepts these
+// (e.g. gemini-flash-latest worked without a prefix).
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest'];
 const SYSTEM_PROMPT =
   'You are a helpful, concise, and friendly AI assistant. Answer questions clearly and accurately.';
 
@@ -116,9 +116,11 @@ export default {
     }
 
     let messages;
+    let requestedModel;
     try {
       const parsed = await request.json();
       messages = parsed.messages;
+      requestedModel = parsed.model; // optional debug/override
     } catch {
       return json({ error: 'Invalid JSON body' }, 400, env);
     }
@@ -128,10 +130,13 @@ export default {
 
     const apiUrl = env.LLM_API_URL || DEFAULT_API_URL;
     const primary = env.LLM_MODEL || DEFAULT_MODEL;
-    // Try the primary model first, then stable fallbacks (deduped).
-    const models = [primary, ...FALLBACK_MODELS].filter(
-      (m, i, arr) => m && arr.indexOf(m) === i,
-    );
+    // If the caller supplied a model, use only that (debug/override).
+    // Otherwise try the primary then fallbacks (deduped).
+    const models = requestedModel
+      ? [requestedModel]
+      : [primary, ...FALLBACK_MODELS].filter(
+          (m, i, arr) => m && arr.indexOf(m) === i,
+        );
 
     const callModel = (model) =>
       fetch(apiUrl, {

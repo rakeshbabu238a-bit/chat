@@ -7,9 +7,7 @@ compatibility_date = "2024-09-01"
 #   wrangler secret put LLM_API_KEY
 [vars]
 # gemini-2.5-flash-lite has the most generous free-tier daily quota.
-# The OpenAI-compat endpoint expects the concrete model ID with the
-# "models/" prefix (as returned by GET /models).
-LLM_MODEL = "models/gemini-2.5-flash-lite"
+LLM_MODEL = "gemini-2.5-flash-lite"
 # LLM_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 # Lock CORS to your site for production instead of the default "*":
 # ALLOW_ORIGIN = "https://pinnacle-tech.in"
