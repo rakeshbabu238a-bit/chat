@@ -6,10 +6,14 @@ compatibility_date = "2024-09-01"
 # providers (Groq, OpenAI, ...). The API key is NOT set here — it is a secret:
 #   wrangler secret put LLM_API_KEY
 [vars]
-# gemini-flash-latest is confirmed callable on this key via the OpenAI-compat
-# chat endpoint. (gemini-2.5-flash-lite appears in /models but 404s on chat
-# for this tier.)
-LLM_MODEL = "gemini-flash-latest"
-# LLM_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+# Provider: Groq (OpenAI-compatible, generous free tier).
+# The API key is the GROQ key, stored as the LLM_API_KEY secret:
+#   wrangler secret put LLM_API_KEY   (paste your gsk_... Groq key)
+LLM_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+LLM_MODEL = "llama-3.3-70b-versatile"
+
+# To switch back to Gemini instead, comment out the two lines above; the
+# Worker then defaults to the Gemini OpenAI-compat endpoint + gemini-flash-latest.
+
 # Lock CORS to your site for production instead of the default "*":
 # ALLOW_ORIGIN = "https://pinnacle-tech.in"
