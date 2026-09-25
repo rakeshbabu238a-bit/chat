@@ -1,0 +1,12 @@
+{
+  "name": "chat-llm-proxy",
+  "description": "Cloudflare Worker LLM proxy (OpenAI-compatible) for the Flutter chat app",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

@@ -27,16 +27,17 @@ jobs:
         working-directory: flutter-chat-app
         run: flutter pub get
 
-      # The LLM API key is NOT baked into the web build. It lives only as a
-      # Firebase secret consumed by the Cloud Function (see functions/index.js).
-      # The client writes user messages to Firestore; the `onMessageCreated`
-      # function generates the reply server-side and streams it back.
+      # The LLM API key is NOT baked into the web build. The app only knows the
+      # URL of the server-side proxy (a Cloudflare Worker, see cloudflare-worker/),
+      # which holds the key as a Worker secret and calls the LLM.
+      # Set CHAT_API_URL as a repository variable or secret, e.g.
+      #   https://chat-llm-proxy.<subdomain>.workers.dev/chat
       - name: Build Flutter web
         working-directory: flutter-chat-app
-        run: flutter build web --release
+        env:
+          CHAT_API_URL: ${{ vars.CHAT_API_URL || secrets.CHAT_API_URL }}
+        run: flutter build web --release --dart-define=CHAT_API_URL="$CHAT_API_URL"
 
-      # Deploy Hosting FIRST so the freshly built web bundle always goes live,
-      # independent of whether the Functions deploy succeeds.
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -46,60 +47,17 @@ jobs:
           projectId: buddy-ec712
           entryPoint: flutter-chat-app
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Cloud Functions dependencies
-        working-directory: flutter-chat-app/functions
-        run: npm ci
-
-      # Deploy the Cloud Functions + Firestore rules that power the server-side
-      # LLM proxy. Kept non-blocking: it needs the Blaze plan and a service
-      # account with Cloud Functions Developer, Service Account User, and
-      # Secret Manager Secret Accessor roles, plus the secret to exist:
-      #   firebase functions:secrets:set LLM_API_KEY --project buddy-ec712
-      # If this step fails, Hosting has already deployed above.
+      # Firestore rules only (no Cloud Functions — the LLM proxy runs on
+      # Cloudflare Workers, so the Blaze plan is not required). Non-blocking.
       - name: Write service account key
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/sa.json"
 
-      - name: Deploy Functions and Firestore rules
-        id: deploy_functions
+      - name: Deploy Firestore rules
         continue-on-error: true
         working-directory: flutter-chat-app
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
           npm install -g firebase-tools
-          # Tee output so we can inspect it. firebase deploy can exit 0 even
-          # when functions are skipped (e.g. project not on the Blaze plan),
-          # so a zero exit code alone is not proof of success.
-          set -o pipefail
-          firebase deploy \
-            --only functions,firestore:rules \
-            --project buddy-ec712 \
-            --non-interactive 2>&1 | tee deploy.log
-          if grep -qiE "Blaze|billing account|must be on the|upgrade your project" deploy.log; then
-            echo "::error::Functions were NOT deployed. The project appears to require the Blaze billing plan. Enable Blaze on buddy-ec712, set the LLM_API_KEY secret, then re-run."
-            exit 1
-          fi
-
-      # Independent proof the function is actually live. The client relies on
-      # the onMessageCreated trigger, but the `chat` HTTP function shares the
-      # same deploy, so a 404 here means functions did not deploy.
-      - name: Verify chat function is reachable
-        continue-on-error: true
-        run: |
-          url="https://us-central1-buddy-ec712.cloudfunctions.net/chat"
-          # POST with an empty body: a deployed function replies 400
-          # ("messages must be a non-empty array"); a missing function is 404.
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-            -H "Content-Type: application/json" -d '{}' "$url")
-          echo "chat function responded with HTTP $code"
-          if [ "$code" = "404" ]; then
-            echo "::error::The 'chat' Cloud Function returned 404 — functions are not deployed. Check the Blaze plan and the LLM_API_KEY secret, then re-run this workflow."
-            exit 1
-          fi
-          echo "::notice::Cloud Functions are live (HTTP $code from /chat)."
+          firebase deploy --only firestore:rules --project buddy-ec712 --non-interactive

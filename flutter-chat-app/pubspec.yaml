@@ -1,5 +1,5 @@
 name: flutter_chat_app
-description: AI Chat app powered by Groq (Llama 3.3) with Firestore backend.
+description: AI Chat app (Gemini via a Cloudflare Worker proxy) with Firestore backend.
 publish_to: 'none'
 version: 1.0.0+1
 

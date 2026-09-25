@@ -1,0 +1,12 @@
+name = "chat-llm-proxy"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# Optional non-secret config. Override the model/endpoint here to switch
+# providers (Groq, OpenAI, ...). The API key is NOT set here — it is a secret:
+#   wrangler secret put LLM_API_KEY
+[vars]
+# LLM_MODEL = "gemini-flash-latest"
+# LLM_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+# Lock CORS to your site for production instead of the default "*":
+# ALLOW_ORIGIN = "https://pinnacle-tech.in"
